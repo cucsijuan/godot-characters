@@ -29,7 +29,7 @@ public sealed class CharacterImport
     public void Run()
     {
         Stage();
-        ImportWithGodot();
+        SourceFiles.ImportWithGodot(_log);
         foreach (ImportPlan.AnimationSet set in _plan.AnimationSets)
             BuildLibrary(set);
         foreach (ImportPlan.Palette palette in _plan.Palettes)
@@ -43,50 +43,23 @@ public sealed class CharacterImport
     {
         int copied = 0;
         foreach (ImportPlan.Model m in _plan.Models)
-            copied += Copy(m.File, CharacterPaths.Model(_plan.Output, m.Name), SceneSettings(BoneMaps.Models));
+            copied += SourceFiles.Copy(m.File, CharacterPaths.Model(_plan.Output, m.Name), SceneSettings(BoneMaps.Models));
         foreach (ImportPlan.Attachment a in _plan.Attachments)
-            copied += Copy(a.File, CharacterPaths.Attachment(_plan.Output, a.Name), SceneSettings(null));
+            copied += SourceFiles.Copy(a.File, CharacterPaths.Attachment(_plan.Output, a.Name), SceneSettings(null));
         foreach (ImportPlan.AnimationSet set in _plan.AnimationSets)
             foreach (ImportPlan.Clip clip in set.Clips.Where(c => c.Take == null))
             {
-                copied += Copy(clip.File, CharacterPaths.Clip(_plan.Output, set.Name, clip.Name), SceneSettings(BoneMaps.Animations));
+                copied += SourceFiles.Copy(clip.File, CharacterPaths.Clip(_plan.Output, set.Name, clip.Name), SceneSettings(BoneMaps.Animations));
                 if (clip.RootMotionFile != null)
-                    copied += Copy(clip.RootMotionFile, CharacterPaths.RootMotionClip(_plan.Output, set.Name, clip.Name), SceneSettings(BoneMaps.Animations));
+                    copied += SourceFiles.Copy(clip.RootMotionFile, CharacterPaths.RootMotionClip(_plan.Output, set.Name, clip.Name), SceneSettings(BoneMaps.Animations));
             }
         foreach (ImportPlan.Palette p in _plan.Palettes)
         {
-            copied += Copy(p.Albedo, CharacterPaths.Texture(_plan.Output, p.Albedo), TextureSettings(p.Size, normalMap: false));
+            copied += SourceFiles.Copy(p.Albedo, CharacterPaths.Texture(_plan.Output, p.Albedo), SourceFiles.TextureSettings(p.Size, normalMap: false));
             if (p.Normal != null)
-                copied += Copy(p.Normal, CharacterPaths.Texture(_plan.Output, p.Normal), TextureSettings(p.Size, normalMap: true));
+                copied += SourceFiles.Copy(p.Normal, CharacterPaths.Texture(_plan.Output, p.Normal), SourceFiles.TextureSettings(p.Size, normalMap: true));
         }
         _log($"{copied} source files copied or changed");
-    }
-
-    /// <summary>Copies a source file (when it changed) and writes its import settings; 1 if anything changed.</summary>
-    private static int Copy(string from, string to, string settings)
-    {
-        if (!File.Exists(from))
-            throw new FileNotFoundException($"source file not found: {from}");
-        string target = ProjectSettings.GlobalizePath(to);
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        int changed = 0;
-        var source = new FileInfo(from);
-        var copy = new FileInfo(target);
-        if (!copy.Exists || copy.Length != source.Length || copy.LastWriteTimeUtc != source.LastWriteTimeUtc)
-        {
-            File.Copy(from, target, overwrite: true);
-            File.SetLastWriteTimeUtc(target, source.LastWriteTimeUtc);
-            changed = 1;
-        }
-        // Godot adds its own lines (uid, dest_files) to an import file; it is written again only when the settings
-        // differ, and Godot then imports the file again.
-        string import = target + ".import";
-        if (!File.Exists(import) || !File.ReadAllText(import).Contains(settings))
-        {
-            File.WriteAllText(import, settings);
-            changed = 1;
-        }
-        return changed;
     }
 
     private static class BoneMaps
@@ -110,28 +83,6 @@ public sealed class CharacterImport
                 .Append("\"retarget/remove_tracks/unmapped_bones\": true\n}\n}\n");
         s.Append("}\n");
         return s.ToString();
-    }
-
-    private static string TextureSettings(int size, bool normalMap) =>
-        "[remap]\n\nimporter=\"texture\"\ntype=\"CompressedTexture2D\"\n\n[params]\n\n" +
-        "compress/mode=2\ncompress/high_quality=false\n" +
-        $"compress/normal_map={(normalMap ? 1 : 2)}\n" +
-        "mipmaps/generate=true\n" +
-        $"process/size_limit={size}\n" +
-        "detect_3d/compress_to=0\n";
-
-    private void ImportWithGodot()
-    {
-        string project = ProjectSettings.GlobalizePath("res://");
-        var output = new Godot.Collections.Array();
-        _log("Godot imports the sources");
-        int code = OS.Execute(OS.GetExecutablePath(), new[] { "--headless", "--path", project, "--import" }, output, readStderr: true);
-        if (code != 0)
-        {
-            foreach (Variant line in output)
-                GD.PrintErr(line.AsString());
-            throw new InvalidOperationException($"Godot's import failed ({code})");
-        }
     }
 
     // --- Second pass: libraries and materials --------------------------------------------------------------------
