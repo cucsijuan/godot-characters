@@ -54,6 +54,22 @@ public partial class Body : Node3D
     /// <summary>A clip played instead of moving while set (by its name in the library); null to move again.</summary>
     public string Hold { get; set; }
 
+    /// <summary>
+    /// How many times a second the pose is worked out; 0 (the default) every frame. A body far from the camera
+    /// looks the same posed a few times a second, and costs a fraction: the crowd's far ring.
+    /// </summary>
+    public float PoseRate
+    {
+        get => _poseRate;
+        set
+        {
+            _poseRate = Mathf.Max(0, value);
+            Pace();
+        }
+    }
+    private float _poseRate;
+    private float _sincePose;
+
     /// <summary>The capsule's height when there is no model.</summary>
     public float Height { get; set; } = 1.8f;
 
@@ -98,6 +114,7 @@ public partial class Body : Node3D
         _player = new AnimationPlayer { Name = "Moves", RootNode = new NodePath("..") };
         _player.AddAnimationLibrary(Library, library);
         _model.AddChild(_player);
+        Pace();
 
         // Natural speeds are in hip heights per second: this skeleton's motion scale makes them metres.
         var speeds = library.HasMeta(CharacterPaths.SpeedsMeta)
@@ -125,6 +142,16 @@ public partial class Body : Node3D
         if (_player == null)
             return;
         float dt = (float)delta;
+        if (_poseRate > 0)
+        {
+            // Posed now and then, by as much time as has gone by (with what was chosen last frame).
+            _sincePose += dt;
+            if (_sincePose >= 1 / _poseRate)
+            {
+                _player.Advance(_sincePose);
+                _sincePose = 0;
+            }
+        }
         _air = Grounded ? 0 : _air + dt;
 
         if (Hold != null)
@@ -245,6 +272,17 @@ public partial class Body : Node3D
 
     private static IEnumerable<MeshInstance3D> Meshes(Node under) =>
         under.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>();
+
+    /// <summary>The animation player runs by itself every frame, or is advanced by hand at <see cref="PoseRate"/>.</summary>
+    private void Pace()
+    {
+        if (_player == null)
+            return;
+        _player.CallbackModeProcess = _poseRate > 0
+            ? AnimationMixer.AnimationCallbackModeProcess.Manual
+            : AnimationMixer.AnimationCallbackModeProcess.Idle;
+        _sincePose = 0;
+    }
 
     private void Capsule()
     {
