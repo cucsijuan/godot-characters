@@ -12,8 +12,9 @@ and keeps what the import makes out of its repository.
   (`BoneMaps/`: the packs' models end the right hand's finger bones in `_2`, the animation files in `_1`, so each has
   its map), with the silhouette fix on and tracks of unmapped bones removed. A clip that travels names its root-motion
   version; its natural speed (the root's way over the ground over its time, in hip heights per second, as retargeted
-  positions are) is kept on the library as metadata (`CharacterPaths.SpeedsMeta`). `CharacterPaths` says where
-  everything goes.
+  positions are) is kept on the library as metadata (`CharacterPaths.SpeedsMeta`). A clip the packs lack can come
+  from something the game already imports onto the humanoid profile with its own bone map (an animation library or a
+  scene, by the clip's name in it: `Take`). `CharacterPaths` says where everything goes.
 - `Body` (`src/Body.cs`): a node that wears a `Body.Look` (the imported model, which of its meshes show, parts hung on
   bones, a material) and plays `Body.Moves` (idle, the locomotion clips slowest first, jump, fall, land) from a
   library. Its owner sets `Speed` (metres per second over the ground), `Grounded`, calls `Jump()`, and may `Hold` any

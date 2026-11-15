@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Godot;
 
@@ -46,7 +47,7 @@ public sealed class CharacterImport
         foreach (ImportPlan.Attachment a in _plan.Attachments)
             copied += Copy(a.File, CharacterPaths.Attachment(_plan.Output, a.Name), SceneSettings(null));
         foreach (ImportPlan.AnimationSet set in _plan.AnimationSets)
-            foreach (ImportPlan.Clip clip in set.Clips)
+            foreach (ImportPlan.Clip clip in set.Clips.Where(c => c.Take == null))
             {
                 copied += Copy(clip.File, CharacterPaths.Clip(_plan.Output, set.Name, clip.Name), SceneSettings(BoneMaps.Animations));
                 if (clip.RootMotionFile != null)
@@ -141,7 +142,9 @@ public sealed class CharacterImport
         var speeds = new Godot.Collections.Dictionary<string, float>();
         foreach (ImportPlan.Clip clip in set.Clips)
         {
-            Animation animation = TakeAnimation(CharacterPaths.Clip(_plan.Output, set.Name, clip.Name));
+            Animation animation = clip.Take != null
+                ? TakeAnimation(clip.File, clip.Take)
+                : TakeAnimation(CharacterPaths.Clip(_plan.Output, set.Name, clip.Name));
             animation.LoopMode = clip.Loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
             library.AddAnimation(clip.Name, animation);
             if (clip.RootMotionFile != null)
@@ -153,6 +156,31 @@ public sealed class CharacterImport
         }
         library.SetMeta(CharacterPaths.SpeedsMeta, speeds);
         Save(library, CharacterPaths.Animations(_plan.Output, set.Name));
+    }
+
+    /// <summary>A clip by name from what the game imports itself: an animation library, or a scene with an AnimationPlayer.</summary>
+    private static Animation TakeAnimation(string path, string name)
+    {
+        Resource source = ResourceLoader.Load(path, null, ResourceLoader.CacheMode.Replace)
+            ?? throw new InvalidOperationException($"{path} was not imported");
+        if (source is AnimationLibrary library)
+            return library.HasAnimation(name)
+                ? (Animation)library.GetAnimation(name).Duplicate()
+                : throw new InvalidOperationException($"{path} has no animation '{name}'");
+        if (source is not PackedScene scene)
+            throw new InvalidOperationException($"{path} is neither an animation library nor a scene");
+        Node root = scene.Instantiate();
+        try
+        {
+            foreach (AnimationPlayer player in root.FindChildren("*", nameof(AnimationPlayer), true, false).OfType<AnimationPlayer>())
+                if (player.HasAnimation(name))
+                    return (Animation)player.GetAnimation(name).Duplicate();
+            throw new InvalidOperationException($"{path} has no animation '{name}'");
+        }
+        finally
+        {
+            root.Free();
+        }
     }
 
     private static Animation TakeAnimation(string scenePath)
@@ -241,8 +269,13 @@ public sealed class ImportPlan
 
     public sealed record AnimationSet(string Name, IReadOnlyList<Clip> Clips);
 
-    /// <summary>A clip, in place; <paramref name="RootMotionFile"/> is the same move travelling, to measure its speed.</summary>
-    public sealed record Clip(string Name, string File, bool Loop, string RootMotionFile = null);
+    /// <summary>
+    /// A clip, in place; <paramref name="RootMotionFile"/> is the same move travelling, to measure its speed. With
+    /// <paramref name="Take"/>, the clip is not a Synty file to import but an animation of that name in something
+    /// the game already imports onto the humanoid profile with its own bone map (<paramref name="File"/>, a res://
+    /// path to an animation library or a scene): a clip from another set, say.
+    /// </summary>
+    public sealed record Clip(string Name, string File, bool Loop, string RootMotionFile = null, string Take = null);
 
     /// <summary>A texture set every model can wear: its colours, its normal map (or null), the side it is made at.</summary>
     public sealed record Palette(string Name, string Albedo, string Normal, int Size, float Roughness = 0.85f);
