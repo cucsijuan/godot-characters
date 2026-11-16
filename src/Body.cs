@@ -63,7 +63,10 @@ public partial class Body : Node3D
         get => _poseRate;
         set
         {
-            _poseRate = Mathf.Max(0, value);
+            float rate = Mathf.Max(0, value);
+            if (rate == _poseRate)
+                return;
+            _poseRate = rate;
             Pace();
         }
     }
@@ -281,7 +284,8 @@ public partial class Body : Node3D
         _player.CallbackModeProcess = _poseRate > 0
             ? AnimationMixer.AnimationCallbackModeProcess.Manual
             : AnimationMixer.AnimationCallbackModeProcess.Idle;
-        _sincePose = 0;
+        // Each body starts somewhere in the interval, so a crowd isn't all posed in the same frame.
+        _sincePose = _poseRate > 0 ? GetInstanceId() % 997 / 997f / _poseRate : 0;
     }
 
     private void Capsule()
